@@ -57,6 +57,20 @@ from swiftclient import ClientException
 from swiftclient import put_object
 
 
+# Closer to hostname -f than socket.getfqdn() by itself
+# from https://github.com/saltstack/salt/pull/11396/files 
+def get_fqhostname():
+    '''
+    Returns the fully qualified hostname
+    '''
+    if socket.gethostname().find('.') >= 0:
+        return socket.gethostname()
+    else:
+        family, socktype, proto, canonname, sockaddr = socket.getaddrinfo(
+                socket.gethostname(), 0, socket.AF_UNSPEC, socket.SOCK_STREAM,
+                socket.SOL_TCP, socket.AI_CANONNAME)[0]
+    return canonname
+
 # Handy for tracing execution of getput itself
 def logexec(text):
 
@@ -272,6 +286,7 @@ def main(argv):
     global debug, options, procset, sizeset, ldist10
     global username, password, authurl, osvars, errmax
     global latexc_min, latexc_max, latexc_filt, exclog, excopt, sha_size
+    global bynode_val
 
     ldist10 = 0
     procset = [1]
@@ -381,8 +396,7 @@ def main(argv):
     groupb.add_option('--creds',    dest='creds',
                       help='credentials')
     groupb.add_option('--rank',     dest='rank',
-                      help='rank among clients, used in obj/container names',
-                      default='0')
+                      help='rank among clients, used in obj/container names')
     groupb.add_option('--sync',     dest='synctime',
                       help='time, in seconds since epoch, to start test')
     groupb.add_option('--utc',     dest='utc',
@@ -534,6 +548,13 @@ def main(argv):
 
     if options.rank and not re.match('\d+$', options.rank):
         error('--rank must be an integer')
+
+    # Decide if rank or fqhostname should be used for the container name.
+    if not options.rank:
+        bynode_val = get_fqhostname()
+        options.rank = 0
+    else:
+        bynode_val = options.rank
 
     # initialze last[] for all processes based on first value of -n
     if options.nobjects:
@@ -1968,9 +1989,9 @@ if __name__ == "__main__":
                         if options.utc:
                             cname += '-%d' % ttime
                         if options.ctype == 'bynode':
-                            cname += "-%s" % options.rank
+                            cname += "-%s" % bynode_val 
                         elif options.ctype == 'byproc':
-                            cname += "-%s-%d" % (options.rank, inst)
+                            cname += "-%s-%d" % (bynode_val, inst)
 
                         # if container exists, get its storage policy name
                         # noting since they all MUST be the same we need only
@@ -2123,7 +2144,7 @@ if __name__ == "__main__":
                         if options.utc:
                             cname += '-%d' % ttime
                         if options.ctype == 'bynode':
-                            cname += "-%s" % options.rank
+                            cname += "-%s" % bynode_val 
                         if debug & 1:
                             print 'deleting container(s): %s' % cname
 
@@ -2131,7 +2152,7 @@ if __name__ == "__main__":
                             delcont(connection, cname)
                         else:
                             for proc in range(procs):
-                                name = '%s-%s-%d' % (cname, options.rank, proc)
+                                name = '%s-%s-%d' % (cname, bynode_val, proc)
                                 delcont(connection, name)
 
                     # not sure if I should do this last, but I think I'd like

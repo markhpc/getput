@@ -228,12 +228,12 @@ on multiple nodes.  The process is the process number and also starts at zero.
 
 .SH CONTAINER TYPES
 
-When one uses the default container type, which is 'shared', neither the rank
-nor the process numbers are included and so the resultant container is shared by
-all.  Similarly, the 'bynode' type inludes the rank but not process and so all
-processes on the same node share the container.  And finally, the 'byproc' type
-includes the process number as well and so results in unique containers for each
-individual process.
+When one uses the default container type, which is 'shared', neither the rank,
+hostname, nor the process numbers are included and so the resultant container 
+is  shared by all processes.  The 'bynode' type includes the fully qualified
+hostname  if no rank is given, otherwise the rank is included.  Finally, the 
+'byproc' type includes the process number as well and so results in unique 
+containers for each individual process.
 
 Since most of the time people are interested in seeing the system working the
 hardest, shared containers are almost exclusively used, at least by me.
