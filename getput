@@ -50,12 +50,14 @@ import md5
 import hashlib
 from random import randint
 from optparse import OptionParser, OptionGroup
-from multiprocessing import Pool
+from multiprocessing import Pool, Value
 from urlparse import urlparse
 from swiftclient import Connection
 from swiftclient import ClientException
 from swiftclient import put_object
 
+# This is our process synchronization counter
+counter = None
 
 # Closer to hostname -f than socket.getfqdn() by itself
 # from https://github.com/saltstack/salt/pull/11396/files 
@@ -1432,6 +1434,8 @@ def execute_proc(args):
     test = args[7]
     stime = args[8]
 
+    global counter
+
     # for PUTs, last will already be correct but we're also passed the correct
     # numbers anyways. but for other operations last is still pointing to the
     # reqested PUTs and not the real ones which would be different if
@@ -1456,6 +1460,27 @@ def execute_proc(args):
                              preauthurl, preauthtoken)
     if connection == -1:
         return(['Error: ClientException connect error'])
+
+    # Wait until all processes have finished connecting before moving on.
+    wait = -1
+    with counter.get_lock():
+        counter.value -= 1
+        wait = counter.value
+        if debug & 1:
+            print "process %s finished connecting, counter at %d" % (instance, wait)
+    while wait > 0:
+        time.sleep(0.001)
+        with counter.get_lock():
+            wait = counter.value
+    if counter < 0:
+        return(['Error: thread counter was < 0'])
+    conn_time = time.time() - stime
+
+    # Reset the stime so we do IO for the correct duration.
+    stime = time.time()
+    if debug & 1:
+        print "process %s connection time took %s seconds!" % (instance, conn_time)
+
     logexec('connected')
 
     #     D e l a y    U n t i l    s y n c t i m e    i f    s p e c i f i e d
@@ -1493,7 +1518,6 @@ def execute_proc(args):
                     lat_dist.append(0)
                 return([test, instance, 0, 0, 0, 0, 0, 0, 0, \
                                lat_dist, read_stat()])
-
     if options.runtime:
         donetime = stime + int(options.runtime)
     else:
@@ -1734,6 +1758,10 @@ def control_c_handler(signal, frame):
     os.kill(ppid, 9)
     sys.exit(0)
 
+def proc_init(args):
+    global counter
+    counter = args
+
 #####################################
 #    S T A R T    O F    S C R I P T
 #####################################
@@ -1921,6 +1949,9 @@ if __name__ == "__main__":
         for procnum in range(len(procset)):
             procs = procset[procnum]
 
+            # Initialize the global process synchronization counter
+            counter = Value('i', procs)
+
             logexec('Running tests for %d procs' % procs)
 
             # this resets last[] for the upcoming set of tests and start a
@@ -1967,7 +1998,7 @@ if __name__ == "__main__":
                             logger(1, test, i - 1, log_time)
 
                     jobs = []
-                    pool = Pool(procs)
+                    pool = Pool(processes = procs, initializer = proc_init, initargs = (counter, ))
                     inputs = []
                     csize = last_size = 0
                     create_container = 0
