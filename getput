@@ -1495,7 +1495,7 @@ def execute_proc(args):
                                lat_dist, read_stat()])
 
     if options.runtime:
-        donetime = time.time() + int(options.runtime)
+        donetime = stime + int(options.runtime)
     else:
         donetime = 9999999999
 
