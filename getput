@@ -1069,14 +1069,14 @@ def put(connection, instance, donetime, cname, csize, oname, random_flag):
                     break
             else:
                 exclogger(text)
-
-    elapsed = time.time() - t0
+    tf = time.time()
+    elapsed = tf - t0
     logger(3, 'Done!  time: %f ops: %d errs: %d' % \
                (elapsed, ops, errs), instance)
     logger(9, '', instance)
 
     return(['put', instance, elapsed, ops, min, max, \
-                tot, errs, lat_dist, latencies, scpu, retries])
+                tot, errs, lat_dist, latencies, scpu, retries, t0, tf])
 
 
 # gets/dels of flat hierarchies are tricky becuase multiple processes can
@@ -1255,14 +1255,14 @@ def get(connection, instance, donetime, cname, csize, oname, random_flag):
                     break
             else:
                 exclogger(text)
-
-    elapsed = time.time() - t0
+    tf = time.time()
+    elapsed = tf - t0
     logger(3, 'Done!  time: %f ops: %d errs: %d' % \
                (elapsed, ops, errs), instance)
     logger(9, '', instance)
 
     return(['get', instance, elapsed, ops, min, max, \
-                tot, errs, lat_dist, latencies, scpu, retries])
+                tot, errs, lat_dist, latencies, scpu, retries, t0, tf])
 
 
 def delobj(connection, instance, donetime, cname, csize, oname, random_flag):
@@ -1366,13 +1366,14 @@ def delobj(connection, instance, donetime, cname, csize, oname, random_flag):
             logger(2, "%f  %f  %s  %s/%s" % \
                        (t1, latency, transID, cname, objname), instance)
 
-    elapsed = time.time() - t0
+    tf = time.time()
+    elapsed = tf - t0
     logger(3, 'Done!  time: %f ops: %d errs: %d' % \
                (elapsed, ops, errs), instance)
     logger(9, '', instance)
 
     return(['del', instance, elapsed, ops, min, max, \
-                tot, errs, lat_dist, latencies, scpu, retries])
+                tot, errs, lat_dist, latencies, scpu, retries, t0, tf])
 
 
 def delcont(connection, cname):
@@ -1474,12 +1475,11 @@ def execute_proc(args):
             wait = counter.value
     if counter < 0:
         return(['Error: thread counter was < 0'])
-    conn_time = time.time() - stime
 
-    # Reset the stime so we do IO for the correct duration.
-    stime = time.time()
+    # Set the process stime
+    pstime = time.time()
     if debug & 1:
-        print "process %s connection time took %s seconds!" % (instance, conn_time)
+        print "process %s connection time took %s seconds!" % (instance, pstime - stime)
 
     logexec('connected')
 
@@ -1519,7 +1519,7 @@ def execute_proc(args):
                 return([test, instance, 0, 0, 0, 0, 0, 0, 0, \
                                lat_dist, read_stat()])
     if options.runtime:
-        donetime = stime + int(options.runtime)
+        donetime = pstime + int(options.runtime)
     else:
         donetime = 9999999999
 
@@ -1566,7 +1566,7 @@ def execute_proc(args):
 
 
 def print_line(procs, instance, ops, rate, iops, min, max, tot, errs,
-               cpu_percent, lat_dist, median, etime, retries, psum_flag=False):
+               cpu_percent, lat_dist, median, etime, retries, t0, tf, psum_flag=False):
     """
     print a line of results for one process OR total for all, only printing
     process details when --psum set and print_output tells us to do so
@@ -1604,7 +1604,7 @@ def print_line(procs, instance, ops, rate, iops, min, max, tot, errs,
     if options.rank:
         line += "%-4s " % options.rank
     line += "%-4s  %4d %4s %6s  %8s  %8s %8.2f %5d" % \
-        (tname, 1, procs, cvt2KMG(osize), ptime(stime), ptime(etime), \
+        (tname, 1, procs, cvt2KMG(osize), ptime(t0), ptime(tf), \
              rate, ops)
     line += "%10.2f %4d %s %7.3f %5.2f-%05.2f" % \
         (iops, errs, latency, median, min, max)
@@ -1705,9 +1705,15 @@ def print_output(results, procs):
     lat_all = []
     etime = time.time()
     opst = ratet = iopst = retries = 0
+    t0min = time.time()
+    tfmax = 0
+
     for i in range(procs):
         oper, instance, elapsed, ops, min, max, tot, errs, \
-            lat_dist, latencies, scpu, retries = results[i]
+            lat_dist, latencies, scpu, retries, t0, tf = results[i]
+
+        t0min = t0 if t0 < t0min else t0min
+        tfmax = tf if tf > tfmax else tfmax
 
         # combine all latencies into oen big array
         lat_all += latencies
@@ -1722,7 +1728,7 @@ def print_output(results, procs):
         if options.psum:
             print_line(instance, instance, ops, rate, iops, min, max,
                        tot, errs, cpu_percent, lat_dist,
-                       median_calc(latencies), etime, retries, True)
+                       median_calc(latencies), etime, retries, t0, tf, True)
 
         opst += ops
         ratet += rate
@@ -1748,7 +1754,7 @@ def print_output(results, procs):
         median = 0
 
     print_line(procs, instance + 1, opst, ratet, iopst, latmin, latmax,
-               lattot, errors, cpu_percent, ldist_tot, median, etime, retries)
+               lattot, errors, cpu_percent, ldist_tot, median, etime, retries, t0min, tfmax)
 
 
 def control_c_handler(signal, frame):
