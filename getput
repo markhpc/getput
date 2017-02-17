@@ -401,6 +401,8 @@ def main(argv):
                       help='rank among clients, used in obj/container names')
     groupb.add_option('--sync',     dest='synctime',
                       help='time, in seconds since epoch, to start test')
+    groupb.add_option('--grace',   dest='grace',
+                      help='grace time in seconds allowed to establish process connections')
     groupb.add_option('--utc',     dest='utc',
                       action='store_true', default=False,
                       help='append utc time to container names')
@@ -1475,6 +1477,11 @@ def execute_proc(args):
             wait = counter.value
     if counter < 0:
         return(['Error: thread counter was < 0'])
+
+    # If additional grace time was set, wait
+    if options.grace:
+        while time.time() < stime + int(options.grace):
+            time.sleep(0.1)
 
     # Set the process stime
     pstime = time.time()
